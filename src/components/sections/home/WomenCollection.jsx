@@ -1,0 +1,287 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import ProductCard from "../../common/ProductCard";
+import { products } from "../../../data/products";
+import { useTranslation } from "react-i18next";
+
+function getRtlScrollType() {
+  if (typeof document === "undefined") return "default";
+  const div = document.createElement("div");
+  div.dir = "rtl";
+  div.style.width = "100px";
+  div.style.height = "100px";
+  div.style.overflow = "scroll";
+  div.style.position = "absolute";
+  div.style.top = "-9999px";
+
+  const inner = document.createElement("div");
+  inner.style.width = "200px";
+  inner.style.height = "100px";
+  div.appendChild(inner);
+  document.body.appendChild(div);
+
+  div.scrollLeft = 0;
+  const a = div.scrollLeft;
+  div.scrollLeft = 1;
+  const b = div.scrollLeft;
+
+  document.body.removeChild(div);
+
+  if (a > 0) return "reverse";
+  if (b === 0) return "negative";
+  return "default";
+}
+
+export default function WomenCollection({
+  items = products,
+  baseCount = 5,
+  mobileStep = 2,
+  desktopStep = 4,
+  imageSrc = "/womenn.png",
+}) {
+  const { t, i18n } = useTranslation();
+
+  const sliderRef = useRef(null);
+  const firstItemRef = useRef(null);
+
+  const lang = (i18n.language || "en").split("-")[0];
+  const isRTL = lang === "ar" || lang === "ku";
+  const rtlTypeRef = useRef(getRtlScrollType());
+
+  const getX = () => {
+    const el = sliderRef.current;
+    if (!el) return 0;
+    if (!isRTL) return el.scrollLeft;
+
+    const max = el.scrollWidth - el.clientWidth;
+    const type = rtlTypeRef.current;
+
+    if (type === "negative") return -el.scrollLeft;
+    if (type === "reverse") return max - el.scrollLeft;
+    return el.scrollLeft;
+  };
+
+  const setX = (x) => {
+    const el = sliderRef.current;
+    if (!el) return;
+    if (!isRTL) {
+      el.scrollLeft = x;
+      return;
+    }
+
+    const max = el.scrollWidth - el.clientWidth;
+    const type = rtlTypeRef.current;
+
+    if (type === "negative") el.scrollLeft = -x;
+    else if (type === "reverse") el.scrollLeft = max - x;
+    else el.scrollLeft = x;
+  };
+
+  const scrollByX = (dx, behavior = "smooth") => {
+    const el = sliderRef.current;
+    if (!el) return;
+    const next = getX() + dx;
+
+    if (!isRTL) el.scrollTo({ left: next, behavior });
+    else {
+      const max = el.scrollWidth - el.clientWidth;
+      const type = rtlTypeRef.current;
+      let raw = next;
+
+      if (type === "negative") raw = -next;
+      else if (type === "reverse") raw = max - next;
+
+      el.scrollTo({ left: raw, behavior });
+    }
+  };
+
+  const baseItems = useMemo(() => {
+    const arr = Array.isArray(items) ? items.filter(Boolean) : [];
+    return arr.slice(0, baseCount);
+  }, [items, baseCount]);
+
+  const loopItems = useMemo(() => {
+    if (!baseItems.length) return [];
+    return [...baseItems, ...baseItems, ...baseItems];
+  }, [baseItems]);
+
+  const [cardStep, setCardStep] = useState(0);
+  const segmentWidthRef = useRef(0);
+  const rafRef = useRef(null);
+
+  useEffect(() => {
+    const calc = () => {
+      if (!firstItemRef.current) return;
+      const cardWidth = firstItemRef.current.offsetWidth + 20;
+      setCardStep(cardWidth);
+      segmentWidthRef.current = cardWidth * baseItems.length;
+    };
+
+    calc();
+    window.addEventListener("resize", calc);
+    return () => window.removeEventListener("resize", calc);
+  }, [baseItems.length]);
+
+  useEffect(() => {
+    const el = sliderRef.current;
+    if (!el || !baseItems.length) return;
+
+    const tmr = setTimeout(() => {
+      const seg = segmentWidthRef.current;
+      if (!seg) return;
+      setX(seg);
+    }, 0);
+
+    return () => clearTimeout(tmr);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseItems.length, isRTL]);
+
+  const onScroll = () => {
+    const el = sliderRef.current;
+    if (!el || !baseItems.length) return;
+
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+
+    rafRef.current = requestAnimationFrame(() => {
+      const seg = segmentWidthRef.current;
+      if (!seg) return;
+
+      const x = getX();
+      if (x < seg * 0.5) setX(x + seg);
+      else if (x > seg * 2.5) setX(x - seg);
+    });
+  };
+
+  const scrollByStep = (direction) => {
+    const el = sliderRef.current;
+    if (!el || !cardStep) return;
+
+    const step = window.innerWidth < 768 ? mobileStep : desktopStep;
+
+    scrollByX(direction * cardStep * step, "smooth");
+  };
+
+  useEffect(() => {
+    const el = sliderRef.current;
+    if (!el) return;
+
+    let isDown = false;
+    let startClientX = 0;
+    let startAxis = 0;
+    let moved = false;
+    const THRESHOLD = 6;
+
+    const onDown = (e) => {
+      if (e.target.closest("button,a")) return;
+
+      isDown = true;
+      moved = false;
+      startClientX = e.clientX;
+      startAxis = getX();
+    };
+
+    const onMove = (e) => {
+      if (!isDown) return;
+
+      const dx = e.clientX - startClientX;
+
+      if (!moved && Math.abs(dx) > THRESHOLD) moved = true;
+      if (!moved) return;
+
+      setX(startAxis - dx);
+      e.preventDefault();
+    };
+
+    const onUp = () => {
+      isDown = false;
+      moved = false;
+    };
+
+    el.addEventListener("pointerdown", onDown);
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerup", onUp);
+    el.addEventListener("pointerleave", onUp);
+    el.addEventListener("pointercancel", onUp);
+
+    return () => {
+      el.removeEventListener("pointerdown", onDown);
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointerleave", onUp);
+      el.removeEventListener("pointercancel", onUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRTL]);
+
+  return (
+    <section className="w-full relative overflow-x-hidden md:mb-20">
+      <div className="w-full mx-auto px-2">
+        <div className="flex flex-col md:flex-row items-center gap-4">
+          <div className="w-full md:flex-1 relative min-w-0">
+            <Header
+              title={t("home.justLanded")}
+              isRTL={isRTL}
+              onLeft={() => scrollByStep(isRTL ? 1 : -1)}
+              onRight={() => scrollByStep(isRTL ? -1 : 1)}
+            />
+
+            <div
+              ref={sliderRef}
+              onScroll={onScroll}
+              className="w-full flex gap-5 overflow-x-auto no-scrollbar py-2 cursor-grab active:cursor-grabbing select-none"
+            >
+              {loopItems.map((item, idx) => (
+                <div
+                  key={`${item?.id ?? "item"}-${idx}`}
+                  ref={idx === 0 ? firstItemRef : null}
+                  className="
+                    shrink-0
+                    w-[calc((100%-20px)/2)]
+                    md:w-[calc((100%-40px)/3)]
+                    lg:w-[calc((100%-60px)/5)]
+                  "
+                >
+                  <ProductCard {...item} />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <ImageBlock imageSrc={imageSrc} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Header({ title, onLeft, onRight, isRTL }) {
+  const leftIcon = isRTL ? "/arrow-circle-left3.svg" : "/arrow-circle-left.svg";
+  const rightIcon = isRTL ? "/arrow-circle-left.svg" : "/arrow-circle-left3.svg";
+
+  return (
+    <div className="flex w-full items-center justify-between mb-2 pt-4">
+      <h2 className="text-[18px] sm:text-[20px] md:text-[24px]">{title}</h2>
+
+      <div className="flex md:gap-2 gap-0 shrink-0">
+        <button onClick={onLeft} type="button" className="w-8 h-8">
+          <img src={leftIcon} className="w-6 md:w-full" alt="" />
+        </button>
+        <button onClick={onRight} type="button" className="w-8 h-8">
+          <img src={rightIcon} className="w-6 md:w-full" alt="" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ImageBlock({ imageSrc }) {
+  return (
+    <div className="hidden md:flex shrink-0">
+      <img
+        src={imageSrc}
+        className="w-[300px] h-[413px] object-cover rounded-[10px]"
+        alt=""
+        draggable={false}
+      />
+    </div>
+  );
+}
