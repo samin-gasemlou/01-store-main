@@ -97,7 +97,7 @@ export default function MobileFooter() {
 
         <p className="text-center text-[#444444] text-[15px]">
           {t("footer.concept")}{" "}
-          <span className="text-[#2B4168]"> Amirhosein Ghavidel </span>
+          <span className="text-[#2B4168]"> Samin Gasemlou </span>
         </p>
       </div>
     </footer>
